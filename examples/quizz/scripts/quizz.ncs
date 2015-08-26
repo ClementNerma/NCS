@@ -1,0 +1,31 @@
+
+# Import generic package
+import package/module generic/nl
+
+# Environment configuration
+__prompt_newline = true
+__choice_newline = true
+__allow_simultaneous_spaces = false
+
+# Quizz
+write red bold "*** Quizz ***"
+
+name = prompt "What is your name ?"
+age = prompt "What is your age ?"
+
+write "What is your favorite fast-food ?"
+fastfood = choice "MacDo" "Quick" "Flunch"
+
+write red bold "*** Results ***"
+
+write "Your name is {{bold,cyan}}{name}"
+write "Your are {{red,bold}}{age}{{-red,-bold}} years-old"
+write "Your favorite fast-food is {{green,bold}}{fastfood}"
+
+write " "
+correct = confirm "Is that correct ?"
+
+if correct
+    write bold cyan "Cool ;)"
+else
+    write bold red "Oh... :'("

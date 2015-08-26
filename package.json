@@ -1,0 +1,23 @@
+{
+  "name": "ncs",
+  "version": "1.0.0",
+  "description": "A module for the NCS shell language",
+  "main": "ncs.js",
+  "bin": {
+    "ncs": "ncs-bin.js"
+  },
+  "directories": {
+    "examples": "examples",
+    ".ncs_packages": ".ncs_packages"
+  },
+  "dependencies": {
+    "chalk": "^1.1.0",
+    "readline-sync": "^1.2.19"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Clement Nerma <clement.nerma@gmail.com> (https://github.com/ClementNerma)",
+  "license": "CC-BY-NC-ND-4.0"
+}
