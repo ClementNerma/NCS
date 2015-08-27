@@ -9,3 +9,6 @@ v1.0 (final)
 - Basic conditions support
 - Display and choices JS functions
 - Fatal errors support
+
+v1.0-a (bug fixed)
+- [Bug fixed] The `ncs shell` command didn't work 

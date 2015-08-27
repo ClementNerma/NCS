@@ -17,9 +17,7 @@ switch(args[0]) {
 
     case 'shell':
         while(true) {
-            var cmd = ncs.withoutReadline(function() {
-                return readlineSync.question('> ');
-            });
+            var cmd = readlineSync.question('> ');
 
             if(cmd === 'exit')
                 process.exit(0);
