@@ -1,0 +1,29 @@
+
+clear
+
+import package/module generic/nl
+import package/module generic/nothing
+
+write "If you don't see {{green,bold}}'All works ;)'{{-green,-bold}} on the screen in light green and bold,"
+write red bold "then the test failed :'( {{cyan,bold}}else all works fine ;-)"
+nl
+
+strings = [0,0,0,0,0,0,0,"All works",";)"]
+from = 0
+to = 5
+goal = 5
+
+for i = {from} to {to} # a tiny for loop
+    nothing # do nothing to test if the import was done correctly
+
+while goal < 6 # a tiny while loop
+    goal = 6
+    final = 7
+
+final2 = {final} + 1 # mathematical expression
+
+write green bold "{strings[{final}]} {strings[{final2}]}" # a complex string with string extraction from an array
+nl
+
+microtime = microtime()
+write "test done in {{bold,cyan}}{microtime}{{-bold,-cyan}} ms"

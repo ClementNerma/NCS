@@ -36,8 +36,12 @@ exports = module.exports = new (function() {
             console.log(ctx.formatString(args[i], ctx));
         },
 
+        microtime: function(args, ctx) {
+            return Date.now() - ctx.started;
+        },
+
         prompt: function(args, ctx) {
-            var result = readlineSync.question(args[0] + ' ');
+            var result = readlineSync.question(ctx.formatString(args[0], ctx) + ' ');
 
             if(ctx.vars.__prompt_newline)
                 console.log('');
@@ -46,6 +50,9 @@ exports = module.exports = new (function() {
         },
 
         choice: function(args, ctx) {
+            for(var i = 0; i < args.length; i += 1)
+                args[i] = ctx.formatString(args[i], ctx);
+
             var result = args[readlineSync.keyInSelect(args, colors.green(': '), {
                 cancel: false,
                 guide: false
@@ -57,8 +64,8 @@ exports = module.exports = new (function() {
             return result;
         },
 
-        confirm: function(args) {
-            return readlineSync.keyInYNStrict(args[0]);
+        confirm: function(args, ctx) {
+            return readlineSync.keyInYNStrict(ctx.formatString(args[0], ctx));
         },
 
         clear: function(args) {
@@ -71,17 +78,19 @@ exports = module.exports = new (function() {
     };
 
     var namespaces = {
-        'MAIN': {
-            vars: {},
-            modules : {},
-            packages: {}
-        },
         '__EMPTY': {
-            vars: {},
+            vars: {
+                false: false,
+                true: true,
+                null: null,
+                undefined: undefined
+            },
             modules : {},
             packages: {}
         }
     };
+
+    namespaces.MAIN = cloneObject(namespaces.__EMPTY);
 
     this.load = function(path, namespace) {
         path += '.ncs';
@@ -98,6 +107,8 @@ exports = module.exports = new (function() {
     };
 
     this.run = function(content, namespace, filename, parse, preserveParseNameSpace) {
+
+        var startedHour = Date.now();
 
         function fatal(message) {
             throw new Error(colors.red.bold('Fatal error : ' + message + '\n       In ' + colors.cyan(filename) + ' at line ' + colors.blue(i + 1) + '\n       Namespace ' + colors.green(namespace)));
@@ -120,12 +131,24 @@ exports = module.exports = new (function() {
         var packages  = namespaces[namespace].packages ;
 
         // get the value of a variable
-        function get_var(name) {
+        function get_var(name, _vars) {
+
+            if(!_vars)
+                _vars = vars;
+
+            name = name
+                .replace(/\{([a-zA-Z0-9_\.\[\{\}\]]+)\}/g, function(match, varName) {
+                    return get_var(varName, _vars);
+                })
+                .replace(/\[(.*)\]/g, function(match, property) {
+                    return '.' + property;
+                });
+
             if(name.indexOf('.') === -1)
-                return vars[name];
+                return _vars[name];
 
             name = name.split('.');
-            var p = vars;
+            var p = _vars;
 
             for(var i = 0; i < name.length; i++) {
                 if(!p.hasOwnProperty(name[i]))
@@ -140,6 +163,15 @@ exports = module.exports = new (function() {
 
         // set the value of a variable
         function set_var(name, value) {
+
+            name = name
+                .replace(/\{([a-zA-Z0-9_\.\[\{\}\]]+)\}/g, function(match, varName) {
+                    return get_var(varName);
+                })
+                .replace(/\[(.*)\]/g, function(match, property) {
+                    return '.' + property;
+                });
+
             if(name.indexOf('.') === -1) {
                 vars[name] = value;
                 return true;
@@ -191,12 +223,19 @@ exports = module.exports = new (function() {
                     filename: filename,
                     line: i,
                     parse: parse,
+                    started: startedHour,
                     formatString: function(str, ctx) {
-                        str = str.replace(/([^\\])\{([a-zA-Z0-9_]+)\}/g, function(match, prefix, varName) {
-                            return prefix + ctx.vars[varName];
+                        if(typeof str !== 'string')
+                            return str;
+
+                        str = str.replace(/([^\\\{]|^)\{([a-zA-Z0-9_\{\[\]\}]+)\}/g, function(match, prefix, varName) {
+                            if(varName.substr(0, 1) === '{')
+                                return match;
+
+                            return prefix + get_var(varName, ctx.vars);
                         });
 
-                        var regex = /([^\\])\{\{([a-zA-Z,\/\-_]+)\}\}(.*)$/g;
+                        var regex = /([^\\]|^)\{\{([a-zA-Z,\/\-_]+)\}\}(.*)$/g;
                         var openedColors = [];
 
                         while(str.match(regex))
@@ -260,6 +299,16 @@ exports = module.exports = new (function() {
         }
 
         function val(value) {
+            var match;
+
+            value = value
+                .replace(/([^\\\{]|^)\{([a-zA-Z0-9_\.\[\{\}\]]+)\}/g, function(match, prefix, varName) {
+                    if(varName.substr(0, 1) === '{')
+                        return match;
+
+                    return prefix + get_var(varName);
+                });
+
             if(value === 'false')
                 return false;
 
@@ -269,7 +318,7 @@ exports = module.exports = new (function() {
             if(value === 'null')
                 return false;
 
-            if(value.match(/^([a-zA-Z_]+)\(\)/))
+            if(value.match(/^([a-zA-Z0-9_]+)\(\)/))
                 return parse ? null : func(value.substr(0, value.length - 2));
 
             if(value.match(/^("|')(.*)("|')$/))
@@ -278,11 +327,35 @@ exports = module.exports = new (function() {
             if(value.match(/^([0-9\.\+\-\*\/]+)$/))
                 return parseInt(value);
 
-            if(value.match(/^\{([a-zA-Z_]+)\}$/))
+            if(value.match(/^\{([a-zA-Z0-9_\.\[\{\}\]]+)\}$/))
                 return get_var(value.substr(1, value.length - 2));
 
             if(value.match(/^([a-zA-Z_]+)$/))
                 return value;
+
+            if(value.match(/^\[(.*)\]$/)) {
+                try {
+                    return JSON.parse(value);
+                }
+
+                catch(e) {
+                    fatal('Parse error : Invalid array');
+                }
+            }
+
+            if(value.match(/^\{(.*)\}$/) && value.indexOf(':') !== -1) {
+                try {
+                    return JSON.parse(value);
+                }
+
+                catch(e) {
+                    fatal('Parse error : Invalid object');
+                }
+            }
+
+            if(value.match(/^([0-9\+\-\*\/\(\) ]+)$/)) {
+                return eval(value);
+            }
 
             return parse ? null : func(value);
         }
@@ -299,10 +372,11 @@ exports = module.exports = new (function() {
 
         var line, indent, match, code;
 
-        var IF = []          ,
-            in_module = false,
+        var in_module = false,
             in_module_args   ,
-            start_module_line;
+            start_module_line,
+            labels = {}      ,
+            whileLabel = 0   ;
 
         for(var i = 0; i < content.length; i++) {
             line   = content[i];
@@ -342,29 +416,14 @@ exports = module.exports = new (function() {
                 }
             }
 
-            if(code !== 'else')
-                IF.splice(indent + 1, IF.length - (indent + 1));
-
-            /*while(code !== 'else' && IF.length - 1 > indent) {
-                IF.splice(IF.length, 1);
-            }*/
-
-            if(code === 'else') {
-                IF[indent] = !IF[indent];
-                continue ;
-            }
-
-            if(IF.length && !IF[IF.length - 1]) {
-                continue ;
-            }
-
             // test a condition
             if(code.match(/^if /)) {
                 // test the condition
+                var conditionIsTrue;
                 code = code.substr(3);
                 if(code.match(/^([a-zA-Z_]+)$/)) {
                     // test if a variable is true
-                    IF[indent] = !!get_var(code);
+                    conditionIsTrue = !!get_var(code);
                 } else if((match = code.match(/^([a-zA-Z_]+)( *)(is|isnt|exists|==|\!=|>|<|>=|<=)( *)(.*)$/))) {
                     // test if a variable is equals to another value or variable
 
@@ -373,54 +432,82 @@ exports = module.exports = new (function() {
                     var compared   = match[5];
 
                     if(comparator === 'exists') {
-                        IF[indent] = vars.hasOwnProperty(subject);
-                        continue ;
-                    }
-
-                    if(compared.match(/^([a-zA-Z_]+)$/)) {
-                        // subject and compared are variables' name
-                        compared = get_var(compared);
+                        conditionIsTrue = vars.hasOwnProperty(subject);
                     } else {
-                        compared = val(compared);
+                        if(compared.match(/^([a-zA-Z_]+)$/)) {
+                            // subject and compared are variables' name
+                            compared = get_var(compared);
+                        } else {
+                            compared = val(compared);
+                        }
+
+                        switch(comparator) {
+                            case '==':
+                            case 'is':
+                                conditionIsTrue = get_var(subject) == compared;
+                                break;
+
+                            case '!=':
+                            case 'isnt':
+                                conditionIsTrue = get_var(subject) != compared;
+                                break;
+
+                            case '>':
+                                conditionIsTrue = get_var(subject) > compared;
+                                break;
+
+                            case '<':
+                                conditionIsTrue = get_var(subject) < compared;
+                                break;
+
+                            case '>=':
+                                conditionIsTrue = get_var(subject) >= compared;
+                                break;
+
+                            case '<=':
+                                conditionIsTrue = get_var(subject) <= compared;
+                                break;
+
+                            default:
+                                return fatal('Unknown comparator : ' + colors.cyan(comparator));
+                                break;
+                        }
                     }
+                }
 
-                    switch(comparator) {
-                        case '==':
-                        case 'is':
-                            IF[indent] = get_var(subject) == compared;
-                            break;
+                var ifLines = 0, elseLines = 0;
 
-                        case '!=':
-                        case 'isnt':
-                            IF[indent] = get_var(subject) != compared;
-                            break;
+                for(var ifExplore = i + 1; ifExplore < content.length; ifExplore += 1) {
+                    if(content[ifExplore].match(/^( *)/)[1].length <= indent)
+                        break;
 
-                        case '>':
-                            IF[indent] = get_var(subject) > compared;
-                            break;
+                    ifLines += 1;
+                }
 
-                        case '<':
-                            IF[indent] = get_var(subject) < compared;
-                            break;
+                if(!conditionIsTrue) {
+                    content.splice(i + 1, ifLines);
+                    ifExplore -= ifLines;
+                }
 
-                        case '>=':
-                            IF[indent] = get_var(subject) >= compared;
-                            break;
+                if(content[ifExplore].match(/^( *)/)[1].length === indent && content[ifExplore].trim() === 'else') {
+                    if(!conditionIsTrue)
+                        content.splice(ifExplore, 1);
+                    else {
+                        for(var elseExplore = ifExplore + 1; elseExplore < content.length; elseExplore += 1) {
+                            if(content[elseExplore].match(/^( *)/)[1].length <= indent)
+                                break;
 
-                        case '<=':
-                            IF[indent] = get_var(subject) <= compared;
-                            break;
+                            elseLines += 1;
+                        }
 
-                        default:
-                            return fatal('Unknown comparator : ' + colors.cyan(comparator));
-                            break;
+                        content.splice(ifExplore, elseLines + 1);
                     }
                 }
 
                 continue ;
             }
 
-            if((match = code.match(/^([a-zA-Z_]+)( *)=( *)(.*)$/))) {
+            if((match = code.match(/^([a-zA-Z0-9_]+)( *)=( *)(.*)$/))) {
                 // variable assign
                 set_var(match[1], val(match[4]));
                 //vars[match[1]] = val(match[4]);
@@ -601,6 +688,87 @@ exports = module.exports = new (function() {
                     namespaces[namespace][match[7]][match[13]] = import_target;
                 }
 
+                continue ;
+            }
+
+            if((match = code.match(/^for( *)([a-zA-Z0-9_]+)( *)=( *)([a-zA-Z0-9_\{\}]+)( *)to( *)([a-zA-Z0-9_\{\}]+)$/))) {
+                // match[2] : var name
+                // match[5] : from value
+                // match[8] : to value
+
+                match[5] = val(match[5]);
+                match[8] = val(match[8]);
+
+                var forContent = [], forInsert;
+
+                for(var explore = i + 1; explore < content.length; explore += 1) {
+                    if(!content[explore].match(/^( *)$/)) {
+                        if(content[explore].match(/^( *)/)[1].length <= indent)
+                            break;
+                        else
+                            forContent.push(content[explore]);
+                    }
+                }
+
+                content.splice(i + 1, forContent.length);
+
+                var forIndent = forContent[0].match(/^( *)/)[1].length;
+
+                for(var forCounter = match[5]; forCounter <= match[8]; forCounter += 1) {
+                    content.splice(i + (forCounter - match[5]) * (forContent.length + 1) + 1, 0, match[2] + ' = ' + forCounter);
+
+                    for(forInsert = 0; forInsert < forContent.length; forInsert += 1) {
+                        content.splice(i + (forCounter - match[5]) * (forContent.length + 1) + forInsert + 2, 0, forContent[forInsert].substr(forIndent));
+                    }
+
+                }
+
+                continue ;
+            }
+
+            if((match = code.match(/^while( *)(.*)$/))) {
+                // match[2] : condition
+
+                whileLabel += 1;
+                var whileContent = [], whileInsert;
+
+                for(var explore = i + 1; explore < content.length; explore += 1) {
+                    if(!content[explore].match(/^( *)$/)) {
+                        if(content[explore].match(/^( *)/)[1].length <= indent)
+                            break;
+                        else
+                            whileContent.push(content[explore]);
+                    }
+                }
+
+                var whileIndent = whileContent[0].match(/^( *)/)[1].length;
+
+                content.splice(i + 1, whileContent.length);
+
+                content.splice(i + 1, 0, ':___while_' + whileLabel);
+
+                for(whileInsert = 0; whileInsert < whileContent.length; whileInsert += 1) {
+                    content.splice(i + whileInsert + 2, 0, whileContent[whileInsert].substr(whileIndent));
+                }
+
+                content.splice(i + whileContent.length + 2, 0, 'if ' + match[2]);
+                content.splice(i + whileContent.length + 3, 0, '    goto ___while_' + whileLabel);
+
+                continue ;
+            }
+
+            if(code.match(/^:([a-zA-Z0-9_]+)$/)) {
+                labels[code.substr(1)] = i;
+                continue ;
+            }
+
+            if((match = code.match(/^goto( *)([a-zA-Z0-9_]+)$/))) {
+                var label = match[2];
+
+                if(!labels.hasOwnProperty(label))
+                    fatal('Label not found : ' + colors.cyan.bold(match[2]));
+
+                i = labels[label] - 1;
                 continue ;
             }
 

@@ -1,7 +1,4 @@
 
-# Import generic package
-import package/module generic/nl
-
 # Environment configuration
 __prompt_newline = true
 __choice_newline = true
@@ -27,5 +24,11 @@ correct = confirm "Is that correct ?"
 
 if correct
     write bold cyan "Cool ;)"
+
+    if fastfood is "MacDo"
+        write yellow bold "I like burgers too ;)"
+
+    return 0
 else
     write bold red "Oh... :'("
+    return 1
